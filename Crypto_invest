@@ -1,0 +1,311 @@
+let data = Data([0x01, 0x02, 0x03])
+Data to Array<UInt8>
+
+let bytes = data.bytes                     // [1,2,3]
+Hexadecimal encoding:
+
+let bytes = Array<UInt8>(hex: "0x010203")  // [1,2,3]
+let hex   = bytes.toHexString()            // "010203"
+Build bytes out of String
+
+let bytes: Array<UInt8> = "cipherkey".bytes  // Array("cipherkey".utf8)
+Also... check out helpers that work with Base64 encoded data:
+
+"aPf/i9th9iX+vf49eR7PYk2q7S5xmm3jkRLejgzHNJs=".decryptBase64ToString(cipher)
+"aPf/i9th9iX+vf49eR7PYk2q7S5xmm3jkRLejgzHNJs=".decryptBase64(cipher)
+bytes.toBase64()
+Calculate Digest
+Hashing a data or array of bytes (aka Array<UInt8>)
+
+/* Hash struct usage */
+let bytes: Array<UInt8> = [0x01, 0x02, 0x03]
+let digest = input.md5()
+let digest = Digest.md5(bytes)
+let data = Data([0x01, 0x02, 0x03])
+
+let hash = data.md5()
+let hash = data.sha1()
+let hash = data.sha224()
+let hash = data.sha256()
+let hash = data.sha384()
+let hash = data.sha512()
+do {
+    var digest = MD5()
+    let partial1 = try digest.update(withBytes: [0x31, 0x32])
+    let partial2 = try digest.update(withBytes: [0x33])
+    let result = try digest.finish()
+} catch { }
+Hashing a String and printing result
+
+let hash = "123".md5() // "123".bytes.md5()
+Calculate CRC
+bytes.crc16()
+data.crc16()
+
+bytes.crc32()
+data.crc32()
+Message authenticators
+// Calculate Message Authentication Code (MAC) for message
+let key: Array<UInt8> = [1,2,3,4,5,6,7,8,9,10,...]
+
+try Poly1305(key: key).authenticate(bytes)
+try HMAC(key: key, variant: .sha256).authenticate(bytes)
+try CMAC(key: key).authenticate(bytes)
+Password-Based Key Derivation Functions
+let password: Array<UInt8> = Array("s33krit".utf8)
+let salt: Array<UInt8> = Array("nacllcan".utf8)
+
+let key = try PKCS5.PBKDF2(password: password, salt: salt, iterations: 4096, keyLength: 32, variant: .sha256).calculate()
+let password: Array<UInt8> = Array("s33krit".utf8)
+let salt: Array<UInt8> = Array("nacllcan".utf8)
+// Scrypt implementation does not implement work parallelization, so `p` parameter will
+// increase the work time even in multicore systems
+let key = try Scrypt(password: password, salt: salt, dkLen: 64, N: 16384, r: 8, p: 1).calculate()
+HMAC-based Key Derivation Function
+let password: Array<UInt8> = Array("s33krit".utf8)
+let salt: Array<UInt8> = Array("nacllcan".utf8)
+
+let key = try HKDF(password: password, salt: salt, variant: .sha256).calculate()
+Data Padding
+Some content-encryption algorithms assume the input length is a multiple of k octets, where k is greater than one. For such algorithms, the input shall be padded.
+
+Padding.pkcs7.add(to: bytes, blockSize: AES.blockSize)
+Working with Ciphers
+ChaCha20
+let encrypted = try ChaCha20(key: key, iv: iv).encrypt(message)
+let decrypted = try ChaCha20(key: key, iv: iv).decrypt(encrypted)
+Rabbit
+let encrypted = try Rabbit(key: key, iv: iv).encrypt(message)
+let decrypted = try Rabbit(key: key, iv: iv).decrypt(encrypted)
+Blowfish
+let encrypted = try Blowfish(key: key, blockMode: CBC(iv: iv), padding: .pkcs7).encrypt(message)
+let decrypted = try Blowfish(key: key, blockMode: CBC(iv: iv), padding: .pkcs7).decrypt(encrypted)
+AES
+Notice regarding padding: Manual padding of data is optional, and CryptoSwift is using PKCS7 padding by default. If you need to manually disable/enable padding, you can do this by setting parameter for AES class
+
+Variant of AES encryption (AES-128, AES-192, AES-256) depends on given key length:
+
+AES-128 = 16 bytes
+AES-192 = 24 bytes
+AES-256 = 32 bytes
+AES-256 example
+
+let encryptedBytes = try AES(key: [1,2,3,...,32], blockMode: CBC(iv: [1,2,3,...,16]), padding: .pkcs7)
+Full example:
+
+let password: [UInt8] = Array("s33krit".utf8)
+let salt: [UInt8] = Array("nacllcan".utf8)
+
+/* Generate a key from a `password`. Optional if you already have a key */
+let key = try PKCS5.PBKDF2(
+    password: password,
+    salt: salt,
+    iterations: 4096,
+    keyLength: 32, /* AES-256 */
+    variant: .sha256
+).calculate()
+
+/* Generate random IV value. IV is public value. Either need to generate, or get it from elsewhere */
+let iv = AES.randomIV(AES.blockSize)
+
+/* AES cryptor instance */
+let aes = try AES(key: key, blockMode: CBC(iv: iv), padding: .pkcs7)
+
+/* Encrypt Data */
+let inputData = Data()
+let encryptedBytes = try aes.encrypt(inputData.bytes)
+let encryptedData = Data(encryptedBytes)
+
+/* Decrypt Data */
+let decryptedBytes = try aes.decrypt(encryptedData.bytes)
+let decryptedData = Data(decryptedBytes)
+All at once
+do {
+    let aes = try AES(key: "keykeykeykeykeyk", iv: "drowssapdrowssap") // aes128
+    let ciphertext = try aes.encrypt(Array("Nullam quis risus eget urna mollis ornare vel eu leo.".utf8))
+} catch { }
+Incremental updates
+Incremental operations use instance of Cryptor and encrypt/decrypt one part at a time, this way you can save on memory for large files.
+
+do {
+    var encryptor = try AES(key: "keykeykeykeykeyk", iv: "drowssapdrowssap").makeEncryptor()
+
+    var ciphertext = Array<UInt8>()
+    // aggregate partial results
+    ciphertext += try encryptor.update(withBytes: Array("Nullam quis risus ".utf8))
+    ciphertext += try encryptor.update(withBytes: Array("eget urna mollis ".utf8))
+    ciphertext += try encryptor.update(withBytes: Array("ornare vel eu leo.".utf8))
+    // finish at the end
+    ciphertext += try encryptor.finish()
+
+    print(ciphertext.toHexString())
+} catch {
+    print(error)
+}
+AES Advanced usage
+let input: Array<UInt8> = [0,1,2,3,4,5,6,7,8,9]
+
+let key: Array<UInt8> = [0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00]
+let iv: Array<UInt8> = // Random bytes of `AES.blockSize` length
+
+do {
+    let encrypted = try AES(key: key, blockMode: CBC(iv: iv), padding: .pkcs7).encrypt(input)
+    let decrypted = try AES(key: key, blockMode: CBC(iv: iv), padding: .pkcs7).decrypt(encrypted)
+} catch {
+    print(error)
+}
+AES without data padding
+
+let input: Array<UInt8> = [0,1,2,3,4,5,6,7,8,9]
+let encrypted: Array<UInt8> = try! AES(key: Array("secret0key000000".utf8), blockMode: CBC(iv: Array("0123456789012345".utf8)), padding: .noPadding).encrypt(input)
+Using convenience extensions
+
+let plain = Data([0x01, 0x02, 0x03])
+let encrypted = try! plain.encrypt(ChaCha20(key: key, iv: iv))
+let decrypted = try! encrypted.decrypt(ChaCha20(key: key, iv: iv))
+AES-GCM
+The result of Galois/Counter Mode (GCM) encryption is ciphertext and authentication tag, that is later used to decryption.
+
+encryption
+
+do {
+    // In combined mode, the authentication tag is directly appended to the encrypted message. This is usually what you want.
+    let gcm = GCM(iv: iv, mode: .combined)
+    let aes = try AES(key: key, blockMode: gcm, padding: .noPadding)
+    let encrypted = try aes.encrypt(plaintext)
+    let tag = gcm.authenticationTag
+} catch {
+    // failed
+}
+decryption
+
+do {
+    // In combined mode, the authentication tag is appended to the encrypted message. This is usually what you want.
+    let gcm = GCM(iv: iv, mode: .combined)
+    let aes = try AES(key: key, blockMode: gcm, padding: .noPadding)
+    return try aes.decrypt(encrypted)
+} catch {
+    // failed
+}
+Note: GCM instance is not intended to be reused. So you can't use the same GCM instance from encoding to also perform decoding.
+
+AES-CCM
+The result of Counter with Cipher Block Chaining-Message Authentication Code encryption is ciphertext and authentication tag, that is later used to decryption.
+
+do {
+    // The authentication tag is appended to the encrypted message.
+	let tagLength = 8
+	let ccm = CCM(iv: iv, tagLength: tagLength, messageLength: ciphertext.count - tagLength, additionalAuthenticatedData: data)
+    let aes = try AES(key: key, blockMode: ccm, padding: .noPadding)
+    return try aes.decrypt(encrypted)
+} catch {
+    // failed
+}
+Check documentation or CCM specification for valid parameters for CCM.
+
+AEAD
+let encrypt = try AEADChaCha20Poly1305.encrypt(plaintext, key: key, iv: nonce, authenticationHeader: header)
+let decrypt = try AEADChaCha20Poly1305.decrypt(ciphertext, key: key, iv: nonce, authenticationHeader: header, authenticationTag: tagArr: tag)
+RSA
+RSA initialization from parameters
+
+let input: Array<UInt8> = [0,1,2,3,4,5,6,7,8,9]
+
+let n: Array<UInt8> = // RSA modulus
+let e: Array<UInt8> = // RSA public exponent
+let d: Array<UInt8> = // RSA private exponent
+
+let rsa = RSA(n: n, e: e, d: d)
+
+do {
+    let encrypted = try rsa.encrypt(input)
+    let decrypted = try rsa.decrypt(encrypted)
+} catch {
+    print(error)
+}
+RSA key generation
+
+let rsa = try RSA(keySize: 2048) // This generates a modulus, public exponent and private exponent with the given size
+RSA Encryption & Decryption Example
+
+// Alice Generates a Private Key
+let alicesPrivateKey = try RSA(keySize: 1024)
+    
+// Alice shares her **public** key with Bob
+let alicesPublicKeyData = try alicesPrivateKey.publicKeyExternalRepresentation()
+    
+// Bob receives the raw external representation of Alices public key and imports it
+let bobsImportOfAlicesPublicKey = try RSA(rawRepresentation: alicesPublicKeyData)
+    
+// Bob can now encrypt a message for Alice using her public key
+let message = "Hi Alice! This is Bob!"
+let privateMessage = try bobsImportOfAlicesPublicKey.encrypt(message.bytes)
+    
+// This results in some encrypted output like this
+// URcRwG6LfH63zOQf2w+HIllPri9Rb6hFlXbi/bh03zPl2MIIiSTjbAPqbVFmoF3RmDzFjIarIS7ZpT57a1F+OFOJjx50WYlng7dioKFS/rsuGHYnMn4csjCRF6TAqvRQcRnBueeINRRA8SLaLHX6sZuQkjIE5AoHJwgavmiv8PY=
+      
+// Bob can now send this encrypted message to Alice without worrying about people being able to read the original contents
+    
+// Alice receives the encrypted message and uses her private key to decrypt the data and recover the original message
+let originalDecryptedMessage = try alicesPrivateKey.decrypt(privateMessage)
+    
+print(String(data: Data(originalDecryptedMessage), encoding: .utf8))
+// "Hi Alice! This is Bob!"
+RSA Signature & Verification Example
+
+// Alice Generates a Private Key
+let alicesPrivateKey = try RSA(keySize: 1024)
+    
+// Alice wants to sign a message that she agrees with
+let messageAliceSupports = "Hi my name is Alice!"
+let alicesSignature = try alicesPrivateKey.sign(messageAliceSupports.bytes)
+    
+// Alice shares her Public key and the signature with Bob
+let alicesPublicKeyData = try alicesPrivateKey.publicKeyExternalRepresentation()
+    
+// Bob receives the raw external representation of Alices Public key and imports it!
+let bobsImportOfAlicesPublicKey = try RSA(rawRepresentation: alicesPublicKeyData)
+        
+// Bob can now verify that Alice signed the message using the Private key associated with her shared Public key.
+let verifiedSignature = try bobsImportOfAlicesPublicKey.verify(signature: alicesSignature, for: "Hi my name is Alice!".bytes)
+    
+if verifiedSignature == true {
+  // Bob knows that the signature Alice provided is valid for the message and was signed using the Private key associated with Alices shared Public key.
+} else {
+  // The signature was invalid, so either
+  // - the message Alice signed was different then what we expected.
+  // - or Alice used a Private key that isn't associated with the shared Public key that Bob has.
+}
+CryptoSwift RSA Key -> Apple's Security Framework SecKey Example
+
+/// Starting with a CryptoSwift RSA Key
+let rsaKey = try RSA(keySize: 1024)
+
+/// Define your Keys attributes
+let attributes: [String:Any] = [
+  kSecAttrKeyType as String: kSecAttrKeyTypeRSA,
+  kSecAttrKeyClass as String: kSecAttrKeyClassPrivate, // or kSecAttrKeyClassPublic
+  kSecAttrKeySizeInBits as String: 1024, // The appropriate bits
+  kSecAttrIsPermanent as String: false
+]
+var error:Unmanaged<CFError>? = nil
+guard let rsaSecKey = try SecKeyCreateWithData(rsaKey.externalRepresentation() as CFData, attributes as CFDictionary, &error) else {
+  /// Error constructing SecKey from raw key data
+  return
+}
+
+/// You now have an RSA SecKey for use with Apple's Security framework
+Apple's Security Framework SecKey -> CryptoSwift RSA Key Example
+
+/// Starting with a SecKey RSA Key
+let rsaSecKey:SecKey
+
+/// Copy External Representation
+var externalRepError:Unmanaged<CFError>?
+guard let cfdata = SecKeyCopyExternalRepresentation(rsaSecKey, &externalRepError) else {
+  /// Failed to copy external representation for RSA SecKey
+  return
+}
+
+/// Instantiate the RSA Key from the raw external representation
+let rsaKey = try RSA(rawRepresentation: cfdata as Data)
